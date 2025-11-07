@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FM Synthesis Visualizer</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Use Inter font -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom styles for sliders */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 8px;
+            background: #4a5568; /* gray-700 */
+            border-radius: 9999px;
+            outline: none;
+            opacity: 0.9;
+            -webkit-transition: .2s;
+            transition: opacity .2s;
+        }
+        input[type="range"]:hover {
+            opacity: 1;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #cbd5e0; /* slate-300 */
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #cbd5e0; /* slate-300 */
+            border-radius: 50%;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200 p-4 md:p-8 min-h-screen">
+
+    <div class="container mx-auto max-w-6xl">
+        <h1 class="text-3xl md:text-4xl font-bold text-center mb-2 text-white">
+            FM Synthesis Visualizer
+        </h1>
+        <p class="text-center text-gray-400 mb-6 text-lg">
+            See how sidebands are created by changing the C:M Ratio and Modulation Index.
+        </p>
+
+        <!-- Controls -->
+        <div class="bg-gray-800 p-5 rounded-xl shadow-lg mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 items-center">
+                
+                <!-- Play/Pause Button -->
+                <button id="play-pause-btn" class="w-full text-lg font-semibold py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg shadow-md transition duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                    Play
+                </button>
+
+                <!-- Carrier Frequency Slider -->
+                <div>
+                    <label for="carrier-freq" class="block text-sm font-medium text-gray-300 mb-1">
+                        Carrier Freq (C): <span id="carrier-freq-val" class="font-bold text-white">220</span> Hz
+                    </label>
+                    <input type_range="range" id="carrier-freq" min="110" max="880" value="220" step="1" class="w-full">
+                </div>
+
+                <!-- C:M Ratio Input -->
+                <div>
+                    <label for="cm-ratio" class="block text-sm font-medium text-gray-300 mb-1">
+                        C:M Ratio (e.g., 1, 1.414, 2)
+                    </label>
+                    <input type="number" id="cm-ratio" value="1" step="0.001" min="0" 
+                           class="w-full bg-gray-700 border border-gray-600 text-white py-2 px-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" 
+                           list="ratio-presets">
+                    <!-- Datalist provides presets while still allowing custom input -->
+                    <datalist id="ratio-presets">
+                        <option value="1">1:1 (Harmonic)</option>
+                        <option value="2">1:2 (Harmonic)</option>
+                        <option value="3">1:3 (Harmonic)</option>
+                        <option value="0.5">1:0.5 (or 2:1)</option>
+                        <option value="1.5">1:1.5 (or 2:3)</option>
+                        <option value="1.414">1:1.414 (Inharmonic)</option>
+                        <option value="2.718">1:2.718 (Inharmonic)</option>
+                    </datalist>
+                </div>
+
+                <!-- Modulation Index Slider -->
+                <div>
+                    <label for="mod-index" class="block text-sm font-medium text-gray-300 mb-1">
+                        Modulation Index (&beta;): <span id="mod-index-val" class="font-bold text-white">0.0</span>
+                    </label>
+                    <input type="range" id="mod-index" min="0" max="30" value="0" step="0.1" class="w-full">
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Visualizations -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            <!-- Time Domain (Waveform) -->
+            <div class="bg-gray-800 p-4 rounded-xl shadow-lg">
+                <h2 class="text-xl font-semibold mb-3 text-white">Time Domain (Waveform)</h2>
+                <canvas id="time-canvas" width="500" height="250" class="w-full h-64 bg-gray-900 rounded-md"></canvas>
+            </div>
+
+            <!-- Frequency Domain (Spectrum) -->
+            <div class="bg-gray-800 p-4 rounded-xl shadow-lg">
+                <h2 class="text-xl font-semibold mb-3 text-white">Frequency Domain (Spectrum)</h2>
+                <canvas id="freq-canvas" width="500" height="250" class="w-full h-64 bg-gray-900 rounded-md"></canvas>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        'use strict';
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            // DOM Elements
+            const playPauseBtn = document.getElementById('play-pause-btn');
+            const carrierFreqSlider = document.getElementById('carrier-freq');
+            const carrierFreqVal = document.getElementById('carrier-freq-val');
+            const cmRatioInput = document.getElementById('cm-ratio'); // Renamed from cmRatioSelect
+            const modIndexSlider = document.getElementById('mod-index');
+            const modIndexVal = document.getElementById('mod-index-val');
+
+            // Canvas Contexts
+            const timeCanvas = document.getElementById('time-canvas');
+            const timeCtx = timeCanvas.getContext('2d');
+            const freqCanvas = document.getElementById('freq-canvas');
+            const freqCtx = freqCanvas.getContext('2d');
+
+            // Audio API state
+            let audioCtx = null;
+            let carrierOsc = null;
+            let modulatorOsc = null;
+            let modulatorGain = null; // This controls the Frequency Deviation (delta_f)
+            let masterGain = null;
+            let analyserNode = null;
+            let isPlaying = false;
+            let animationFrameId = null;
+
+            // Visualization data arrays
+            let timeData;
+            let freqData;
+
+            /**
+             * Initializes the Web Audio API context and nodes
+             */
+            function setupAudio() {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+                // Create main gain node for volume control
+                masterGain = audioCtx.createGain();
+                masterGain.gain.value = 0.5; // Set to half to prevent clipping
+
+                // Create the Analyser node for visualization
+                analyserNode = audioCtx.createAnalyser();
+                analyserNode.fftSize = 2048;
+
+                // Create the Carrier oscillator
+                carrierOsc = audioCtx.createOscillator();
+                carrierOsc.type = 'sine';
+
+                // Create the Modulator oscillator
+                modulatorOsc = audioCtx.createOscillator();
+                modulatorOsc.type = 'sine';
+                
+                // Create the Modulator Gain node.
+                // This node's output will be added to the carrier's frequency.
+                // Its gain value represents the "frequency deviation" (delta_f).
+                modulatorGain = audioCtx.createGain();
+
+                // --- This is the core FM synthesis graph ---
+                // 1. Modulator -> Modulator Gain
+                modulatorOsc.connect(modulatorGain);
+                
+                // 2. Modulator Gain -> Carrier's *frequency* audio parameter
+                modulatorGain.connect(carrierOsc.frequency);
+                
+                // 3. Carrier -> Master Gain
+                carrierOsc.connect(masterGain);
+                
+                // 4. Master Gain -> Analyser
+                masterGain.connect(analyserNode);
+
+                // 5. Analyser -> Destination (speakers)
+                analyserNode.connect(audioCtx.destination);
+                
+                // Allocate data arrays for visualization
+                timeData = new Uint8Array(analyserNode.fftSize); // buffer for waveform
+                freqData = new Uint8Array(analyserNode.frequencyBinCount); // buffer for spectrum
+
+                // Start the oscillators
+                modulatorOsc.start();
+                carrierOsc.start();
+            }
+
+            /**
+             * Updates audio parameters based on slider/select values
+             */
+            function updateAudioParams() {
+                if (!audioCtx) return;
+
+                // Get values from controls
+                const carrierFreq = parseFloat(carrierFreqSlider.value);
+                const cmRatio = parseFloat(cmRatioInput.value) || 1; // Read from input, default to 1 if invalid
+                const modIndex = parseFloat(modIndexSlider.value);
+                
+                // Calculate Modulator Frequency
+                const modFreq = carrierFreq * cmRatio;
+                
+                // Calculate Frequency Deviation (delta_f)
+                // The formula is: Modulation Index (I) = delta_f / mod_freq
+                // Therefore: delta_f = I * mod_freq
+                const freqDeviation = modIndex * modFreq;
+
+                // Get current time for smooth value changes
+                const now = audioCtx.currentTime;
+
+                // Set oscillator frequencies
+                carrierOsc.frequency.setValueAtTime(carrierFreq, now);
+                modulatorOsc.frequency.setValueAtTime(modFreq, now);
+
+                // Set the modulator gain, which *is* the frequency deviation
+                modulatorGain.gain.setValueAtTime(freqDeviation, now);
+
+                // Update UI labels
+                carrierFreqVal.textContent = carrierFreq.toFixed(0);
+                modIndexVal.textContent = modIndex.toFixed(1);
+            }
+
+            /**
+             * Toggles audio playback
+             */
+            function togglePlay() {
+                if (isPlaying) {
+                    // Stop audio
+                    if (audioCtx) {
+                        audioCtx.close().then(() => {
+                            audioCtx = null;
+                        });
+                    }
+                    if (animationFrameId) {
+                        cancelAnimationFrame(animationFrameId);
+                        animationFrameId = null;
+                    }
+                    isPlaying = false;
+                    playPauseBtn.textContent = 'Play';
+                    playPauseBtn.classList.remove('bg-red-600', 'hover:bg-red-500');
+                    playPauseBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
+                } else {
+                    // Start audio
+                    setupAudio();
+                    updateAudioParams(); // Set initial params
+                    isPlaying = true;
+                    playPauseBtn.textContent = 'Stop';
+                    playPauseBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-500');
+                    playPauseBtn.classList.add('bg-red-600', 'hover:bg-red-500');
+                    draw(); // Start visualization loop
+                }
+            }
+
+            /**
+             * Main visualization loop
+             */
+            function draw() {
+                if (!isPlaying) return;
+
+                animationFrameId = requestAnimationFrame(draw);
+
+                // --- 1. Draw Time Domain (Waveform) ---
+                analyserNode.getByteTimeDomainData(timeData);
+
+                timeCtx.fillStyle = '#111827'; // bg-gray-900
+                timeCtx.fillRect(0, 0, timeCanvas.width, timeCanvas.height);
+                
+                timeCtx.lineWidth = 2;
+                timeCtx.strokeStyle = '#6366F1'; // indigo-500
+                timeCtx.beginPath();
+
+                const sliceWidth = timeCanvas.width * 1.0 / analyserNode.fftSize;
+                let x = 0;
+
+                for (let i = 0; i < analyserNode.fftSize; i++) {
+                    // Convert byte value (0-255) to canvas Y coordinate (-1.0 to 1.0 range)
+                    const v = timeData[i] / 128.0;
+                    const y = (v - 1.0) * timeCanvas.height / 2;
+
+                    if (i === 0) {
+                        timeCtx.moveTo(x, y);
+                    } else {
+                        timeCtx.lineTo(x, y);
+                    }
+                    x += sliceWidth;
+                }
+                timeCtx.lineTo(timeCanvas.width, timeCanvas.height / 2);
+                timeCtx.stroke();
+
+                // --- 2. Draw Frequency Domain (Spectrum) ---
+                analyserNode.getByteFrequencyData(freqData);
+
+                freqCtx.fillStyle = '#111827'; // bg-gray-900
+                freqCtx.fillRect(0, 0, freqCanvas.width, freqCanvas.height);
+
+                const barWidth = (freqCanvas.width / (analyserNode.frequencyBinCount / 2)); // Only show lower half of bins
+                let barHeight;
+                x = 0;
+                
+                // We only loop through half the bins, as they are a mirror image
+                // and the higher frequencies are beyond human hearing anyway.
+                const relevantBins = analyserNode.frequencyBinCount / 2;
+
+                for (let i = 0; i < relevantBins; i++) {
+                    barHeight = (freqData[i] / 255.0) * freqCanvas.height;
+                    
+                    // Map frequency to a color gradient (blue to red)
+                    const hue = (i / relevantBins) * 240; // 240 (blue) down to 0 (red)
+                    freqCtx.fillStyle = `hsl(${240 - hue}, 100%, 50%)`;
+                    freqCtx.fillRect(x, freqCanvas.height - barHeight, barWidth, barHeight);
+
+                    x += barWidth + 1;
+                }
+            }
+
+            // Event Listeners
+            playPauseBtn.addEventListener('click', togglePlay);
+            carrierFreqSlider.addEventListener('input', updateAudioParams);
+            cmRatioInput.addEventListener('input', updateAudioParams); // Changed from cmRatioSelect
+            modIndexSlider.addEventListener('input', updateAudioParams);
+
+        });
+    </script>
+</body>
+</html>
